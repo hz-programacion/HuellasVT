@@ -20,7 +20,7 @@ interface CommandPaletteModalProps {
   sponsors: Sponsor[];
   onClose: () => void;
   onSelectPet: (pet: Pet) => void;
-  onSelectTab: (tab: 'radar' | 'adoptions' | 'emergency' | 'directory') => void;
+  onSelectTab: (tab: 'radar' | 'adoptions' | 'campaigns' | 'emergency' | 'directory' | 'stories') => void;
   onOpenPublish: () => void;
 }
 

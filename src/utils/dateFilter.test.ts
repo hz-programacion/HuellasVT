@@ -70,10 +70,12 @@ test('truncateClean truncates at word boundaries without cutting words awkwardly
   assert.ok(short.endsWith('…'));
 });
 
-test('verifyHappyEndingAuthorization blocks unverified clicks and approves valid last 4 phone digits or owner UID', () => {
+test('verifyHappyEndingAuthorization blocks public phone last 4 digits and requires secret PIN or owner UID', () => {
   const samplePet = {
+    id: 'pet-vt-1',
     authorWhatsApp: '3462 551423',
     authorUid: 'owner-uid-123',
+    securityPin: '8492',
   };
 
   assert.equal(getPhoneLast4Digits(samplePet.authorWhatsApp), '1423');
@@ -81,27 +83,28 @@ test('verifyHappyEndingAuthorization blocks unverified clicks and approves valid
   // Rejects when checkbox is false
   const noCheck = verifyHappyEndingAuthorization({
     pet: samplePet,
-    inputCode: '1423',
+    inputCode: '8492',
     confirmedSafeCheckbox: false,
   });
   assert.equal(noCheck.authorized, false);
 
-  // Rejects wrong 4 digits
-  const wrongCode = verifyHappyEndingAuthorization({
-    pet: samplePet,
-    inputCode: '9999',
-    confirmedSafeCheckbox: true,
-  });
-  assert.equal(wrongCode.authorized, false);
-
-  // Approves exact last 4 digits of publisher WhatsApp
-  const validLast4 = verifyHappyEndingAuthorization({
+  // Explicitly blocks public phone last 4 digits ('1423') to prevent spoofing!
+  const spoofAttemptWithPublicPhone = verifyHappyEndingAuthorization({
     pet: samplePet,
     inputCode: '1423',
     confirmedSafeCheckbox: true,
   });
-  assert.equal(validLast4.authorized, true);
-  assert.equal(validLast4.method, 'phone_last4');
+  assert.equal(spoofAttemptWithPublicPhone.authorized, false);
+  assert.ok(spoofAttemptWithPublicPhone.error?.includes('público'));
+
+  // Approves exact private securityPin ('8492')
+  const validPin = verifyHappyEndingAuthorization({
+    pet: samplePet,
+    inputCode: '8492',
+    confirmedSafeCheckbox: true,
+  });
+  assert.equal(validPin.authorized, true);
+  assert.equal(validPin.method, 'secret_pin');
 
   // Approves authenticated publisher account
   const validOwnerUid = verifyHappyEndingAuthorization({

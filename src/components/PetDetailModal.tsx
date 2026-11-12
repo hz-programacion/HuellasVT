@@ -17,6 +17,7 @@ import {
   Clock,
   Maximize2,
   Sparkles,
+  HeartHandshake,
 } from 'lucide-react';
 
 interface PetDetailModalProps {
@@ -26,6 +27,8 @@ interface PetDetailModalProps {
   onOpenStoryCanvas: (pet: Pet) => void;
   onOpenSmartMatch?: (pet: Pet) => void;
   onMarkHappyEnding: (pet: Pet) => void;
+  onGoToCampaign?: (campaignId?: string) => void;
+  onStartCampaignForPet?: (pet: Pet) => void;
 }
 
 export const PetDetailModal: React.FC<PetDetailModalProps> = ({
@@ -35,6 +38,8 @@ export const PetDetailModal: React.FC<PetDetailModalProps> = ({
   onOpenStoryCanvas,
   onOpenSmartMatch,
   onMarkHappyEnding,
+  onGoToCampaign,
+  onStartCampaignForPet,
 }) => {
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [fitContain, setFitContain] = useState(false);
@@ -274,6 +279,53 @@ export const PetDetailModal: React.FC<PetDetailModalProps> = ({
                   </span>
                   <span className="underline shrink-0 ml-2">Comparar →</span>
                 </button>
+              )}
+
+              {/* Linked Solidarity Campaign or Create Campaign CTA */}
+              {(onGoToCampaign || onStartCampaignForPet) && (
+                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-start gap-2.5 text-xs">
+                    <HeartHandshake className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-[#111315] dark:text-white block">
+                        {pet.linkedCampaignId
+                          ? 'Colecta Solidaria & Banco de Insumos Activo'
+                          : '¿Necesita Cirugía, Alimento o Medicamentos?'}
+                      </strong>
+                      <span className="text-neutral-600 dark:text-neutral-300 text-[11px]">
+                        {pet.linkedCampaignId
+                          ? 'Este caso cuenta con presupuesto veterinario verificado y Alias P2P directo.'
+                          : 'Podés abrir una colecta auditada con cuenta directa en veterinaria.'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {pet.linkedCampaignId && onGoToCampaign ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onGoToCampaign(pet.linkedCampaignId);
+                      }}
+                      className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-display font-bold text-xs shrink-0 transition cursor-pointer"
+                    >
+                      💸 Ver Colecta / Donar Insumo
+                    </button>
+                  ) : (
+                    onStartCampaignForPet && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onStartCampaignForPet(pet);
+                        }}
+                        className="px-3.5 py-2 rounded-lg bg-[#111315] dark:bg-white text-white dark:text-[#111315] font-display font-bold text-xs shrink-0 transition cursor-pointer"
+                      >
+                        + Iniciar Colecta Solidaria
+                      </button>
+                    )
+                  )}
+                </div>
               )}
 
               {/* Security & Anti-Fraud Advisory */}

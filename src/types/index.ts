@@ -33,6 +33,9 @@ export interface Pet {
   authorName: string;
   authorWhatsApp: string;
   authorUid?: string;
+  securityPin?: string;
+  applauseCount?: number;
+  linkedCampaignId?: string;
   lat?: number;
   lng?: number;
   createdAt: number;
@@ -63,6 +66,69 @@ export interface Sponsor {
   isActive: boolean;
   lat?: number;
   lng?: number;
+  createdAt: number;
+}
+
+export type CampaignHelpType = 'financial' | 'supplies' | 'both';
+
+export type CampaignStatus = 'active' | 'pending_approval' | 'completed';
+
+export type SupplyCategory = 'medicina' | 'alimento' | 'insumos' | 'transito';
+
+export interface SupplyItem {
+  id: string;
+  name: string;
+  category: SupplyCategory;
+  targetQty: number;
+  currentQty: number;
+  fulfilled: boolean;
+}
+
+export interface CampaignContribution {
+  id: string;
+  donorName: string;
+  amountArs: number;
+  message: string;
+  status: 'confirmed' | 'in_review';
+  createdAt: number;
+}
+
+export interface SolidarityCampaign {
+  id: string;
+  petId?: string;
+  petName: string;
+  species: PetSpecies;
+  barrio: string;
+  title: string;
+  story: string;
+  helpType: CampaignHelpType;
+  status: CampaignStatus;
+  photoBase64: string;
+
+  // A. Financial P2P Argentina Fields
+  goalAmountArs?: number;
+  confirmedAmountArs?: number;
+  pendingReviewAmountArs?: number;
+  bankAlias?: string;
+  cbuCvu?: string;
+  holderName?: string;
+  bankOrWallet?: string;
+  isDirectVetAccount?: boolean;
+
+  // B. Supplies Checklist
+  supplies: SupplyItem[];
+
+  // C. 3-Layer Anti-Scam & Transparency
+  medicalEvidenceBase64?: string;
+  medicalEvidenceCaption?: string;
+  paidReceiptBase64?: string;
+  paidReceiptCaption?: string;
+  vetClinicName: string;
+  vetProfessionalName?: string;
+  isVerifiedShelter: boolean;
+  shelterOrOrganizerName: string;
+  contactWhatsApp: string;
+  contributions: CampaignContribution[];
   createdAt: number;
 }
 

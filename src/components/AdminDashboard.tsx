@@ -5,9 +5,12 @@ import {
   SponsorCategory,
   SponsorTier,
   PetStatus,
+  SolidarityCampaign,
   VENADO_TUERTO_BARRIOS,
 } from '../types';
 import { calculateStorageUsage, getSponsorExpirationStatus } from '../utils/sponsorRules';
+import { calculateCampaignProgress, formatArs } from '../utils/campaigns';
+import { deriveSecretPinForPet } from '../utils/security';
 import {
   saveSponsor,
   deleteSponsor,
@@ -18,6 +21,9 @@ import {
   resetToSeedData,
   exportBackupDataset,
   importBackupDataset,
+  updateCampaignAdmin,
+  confirmAllPendingContributions,
+  deleteCampaign,
 } from '../services/dataService';
 import {
   Shield,
@@ -38,11 +44,14 @@ import {
   MessageCircle,
   ShieldCheck,
   AlertCircle,
+  HeartHandshake,
+  FileSearch,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
   pets: Pet[];
   sponsors: Sponsor[];
+  campaigns?: SolidarityCampaign[];
   onClose: () => void;
   onDataRefresh: () => void;
 }
@@ -50,11 +59,13 @@ interface AdminDashboardProps {
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   pets,
   sponsors,
+  campaigns = [],
   onClose,
   onDataRefresh,
 }) => {
-  const [activeTab, setActiveTab] = useState<'metrics' | 'pets' | 'sponsors' | 'backup'>('metrics');
+  const [activeTab, setActiveTab] = useState<'metrics' | 'pets' | 'campaigns' | 'sponsors' | 'backup'>('metrics');
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
+  const [inspectingCampaignEvidence, setInspectingCampaignEvidence] = useState<SolidarityCampaign | null>(null);
 
   // Pets Moderation Filters & Inline Edit State
   const [petSearch, setPetSearch] = useState('');
@@ -218,7 +229,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Backup Download
   const handleDownloadBackup = () => {
-    const json = exportBackupDataset(pets, sponsors);
+    const json = exportBackupDataset(pets, sponsors, campaigns);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -230,6 +241,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     showToast('Respaldo JSON descargado correctamente.');
   };
 
+  const handleApproveCampaign = async (c: SolidarityCampaign) => {
+    await updateCampaignAdmin(c.id, { status: 'active' });
+    onDataRefresh();
+    showToast(`Colecta de ${c.petName} aprobada tras verificar evidencia veterinaria.`);
+  };
+
+  const handleConfirmPendingContributions = async (c: SolidarityCampaign) => {
+    await confirmAllPendingContributions(c.id);
+    onDataRefresh();
+    showToast(`Aportes en revisión de ${c.petName} conciliados y sumados al monto oficial.`);
+  };
+
+  const handleDeleteCampaignItem = async (c: SolidarityCampaign) => {
+    await deleteCampaign(c.id);
+    onDataRefresh();
+    showToast(`Colecta de ${c.petName} eliminada.`);
+  };
+
   const handleImportBackup = () => {
     if (!jsonImportText.trim()) return;
     try {
@@ -237,7 +266,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setJsonImportText('');
       onDataRefresh();
       showToast(
-        `Restauración exitosa: ${result.petsCount} mascotas y ${result.sponsorsCount} comercios.`
+        `Restauración exitosa: ${result.petsCount} mascotas, ${result.sponsorsCount} comercios y ${result.campaignsCount} colectas.`
       );
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Error al importar el JSON.');
@@ -340,7 +369,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               }`}
             >
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Moderación & Edición de Casos ({pets.length})</span>
+              <span>Moderación de Mascotas ({pets.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('campaigns')}
+              className={`py-2 px-3.5 rounded-xl font-display text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'campaigns'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-neutral-500 hover:text-black dark:hover:text-white'
+              }`}
+            >
+              <HeartHandshake className="w-3.5 h-3.5" />
+              <span>Colectas & Auditoría Anti-Estafas ({campaigns.length})</span>
+              {campaigns.some((c) => c.status === 'pending_approval') && (
+                <span className="px-1.5 py-0.5 rounded bg-amber-400 text-black font-mono text-[10px] font-extrabold">
+                  {campaigns.filter((c) => c.status === 'pending_approval').length} pend.
+                </span>
+              )}
             </button>
 
             <button
@@ -781,11 +828,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <td className="p-3 text-[11px]">
                         <span className="font-semibold block">{pet.authorName}</span>
                         <span className="text-neutral-400 block">
-                          Tel: {pet.authorWhatsApp} (PIN:{' '}
+                          Tel: {pet.authorWhatsApp} · PIN Secreto:{' '}
                           <strong className="text-emerald-600 dark:text-emerald-400">
-                            {pet.authorWhatsApp.replace(/\D/g, '').slice(-4)}
+                            {deriveSecretPinForPet(pet)}
                           </strong>
-                          )
                         </span>
                       </td>
 
@@ -809,6 +855,194 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 2B: SOLIDARITY CAMPAIGNS & ANTI-SCAM MODERATION       */}
+        {/* ========================================================= */}
+        {activeTab === 'campaigns' && (
+          <div className="overflow-y-auto space-y-4 flex-1 pr-1">
+            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div>
+                <strong className="font-display font-extrabold text-sm text-[#111315] dark:text-white block">
+                  🛡️ Auditoría de Colectas Solidarias & Banco de Insumos (Sistema 3 Capas)
+                </strong>
+                <span className="text-neutral-600 dark:text-neutral-300">
+                  Verificá los presupuestos veterinarios adjuntos antes de habilitar colectas de vecinos particulares y conciliá aportes reportados en revisión.
+                </span>
+              </div>
+              <span className="font-mono text-xs font-bold px-3 py-1.5 rounded-xl bg-white dark:bg-[#14171A] border border-emerald-500/30 shrink-0">
+                {campaigns.filter((c) => c.status === 'pending_approval').length} pendientes de aprobación
+              </span>
+            </div>
+
+            {inspectingCampaignEvidence && (
+              <div className="p-4 rounded-2xl border-2 border-emerald-500/40 bg-[#FAF7F2] dark:bg-[#0B0C0E] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-mono text-[10px] uppercase font-bold text-emerald-600 block">
+                      EVIDENCIA MÉDICA ADJUNTA (WEBP)
+                    </span>
+                    <h4 className="font-display font-bold text-sm">
+                      {inspectingCampaignEvidence.title} — {inspectingCampaignEvidence.vetClinicName}
+                    </h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setInspectingCampaignEvidence(null)}
+                    className="p-1.5 rounded-lg bg-black/5 dark:bg-white/10 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="max-h-72 overflow-auto rounded-xl bg-white p-2 border border-black/10 flex justify-center">
+                  <img
+                    src={
+                      inspectingCampaignEvidence.paidReceiptBase64 ||
+                      inspectingCampaignEvidence.medicalEvidenceBase64
+                    }
+                    alt="Presupuesto veterinario"
+                    className="max-h-64 w-auto rounded"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="overflow-x-auto rounded-2xl border border-black/10 dark:border-white/10">
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-[#FAF7F2] dark:bg-[#0B0C0E] border-b border-black/10 dark:border-white/10 text-neutral-500">
+                  <tr>
+                    <th className="p-3">Caso & Veterinaria</th>
+                    <th className="p-3">Estado & Solicitante</th>
+                    <th className="p-3">Progreso P2P / Insumos</th>
+                    <th className="p-3">Alias Bancario</th>
+                    <th className="p-3 text-right">Acciones Admin</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-black/5 dark:divide-white/5">
+                  {campaigns.map((c) => {
+                    const prog = calculateCampaignProgress(c);
+                    return (
+                      <tr key={c.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
+                        <td className="p-3">
+                          <div className="flex items-center gap-2.5">
+                            <img
+                              src={c.photoBase64}
+                              alt={c.petName}
+                              className="w-10 h-10 rounded-lg object-cover shrink-0"
+                            />
+                            <div>
+                              <span className="font-display font-bold text-sm text-[#111315] dark:text-white block">
+                                {c.petName} ({c.barrio})
+                              </span>
+                              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold block">
+                                🏥 {c.vetClinicName}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="p-3">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              c.status === 'active'
+                                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                                : c.status === 'completed'
+                                  ? 'bg-sky-500/15 text-sky-700 dark:text-sky-300'
+                                  : 'bg-amber-500/20 text-amber-800 dark:text-amber-300'
+                            }`}
+                          >
+                            {c.status === 'active'
+                              ? 'ACTIVA'
+                              : c.status === 'completed'
+                                ? '100% CERRADA'
+                                : 'PENDIENTE APROBACIÓN'}
+                          </span>
+                          <span className="block text-[10px] text-neutral-400 mt-1">
+                            {c.isVerifiedShelter ? '🐾 Refugio Oficial' : '👤 Vecino Particular'} ·{' '}
+                            {c.shelterOrOrganizerName}
+                          </span>
+                        </td>
+
+                        <td className="p-3">
+                          {prog.goalArs > 0 && (
+                            <div>
+                              <span className="font-bold text-[#111315] dark:text-white">
+                                {formatArs(prog.totalRaisedArs)} / {formatArs(prog.goalArs)} (
+                                {prog.totalPercent}%)
+                              </span>
+                              {prog.inReviewArs > 0 && (
+                                <span className="block text-[10px] text-amber-600 dark:text-amber-400">
+                                  ⏳ {formatArs(prog.inReviewArs)} en revisión
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {c.supplies.length > 0 && (
+                            <span className="block text-[10px] text-neutral-500">
+                              💊 {prog.fulfilledSuppliesCount}/{prog.totalSuppliesCount} insumos
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="p-3">
+                          {prog.shouldHideBankAlias ? (
+                            <span className="text-[10px] text-emerald-600 font-bold">
+                              🔒 Oculto (100% Meta)
+                            </span>
+                          ) : (
+                            <span className="font-bold">{c.bankAlias || 'Solo Insumos'}</span>
+                          )}
+                        </td>
+
+                        <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => setInspectingCampaignEvidence(c)}
+                            className="px-2.5 py-1.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                            title="Ver presupuesto veterinario"
+                          >
+                            <FileSearch className="w-3.5 h-3.5 text-[#FF4D38]" />
+                            <span>Evidencia</span>
+                          </button>
+
+                          {c.status === 'pending_approval' && (
+                            <button
+                              type="button"
+                              onClick={() => handleApproveCampaign(c)}
+                              className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer"
+                            >
+                              ✓ Aprobar 1-Clic
+                            </button>
+                          )}
+
+                          {(c.pendingReviewAmountArs || 0) > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleConfirmPendingContributions(c)}
+                              className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-black text-[11px] font-bold cursor-pointer"
+                              title="Confirmar aportes reportados por vecinos"
+                            >
+                              ✓ Conciliar {formatArs(c.pendingReviewAmountArs)}
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCampaignItem(c)}
+                            className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 transition cursor-pointer"
+                            title="Eliminar colecta"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

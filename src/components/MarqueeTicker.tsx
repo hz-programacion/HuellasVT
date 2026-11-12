@@ -16,9 +16,9 @@ export const MarqueeTicker: React.FC<MarqueeTickerProps> = ({ pets, sponsors, on
   return (
     <div
       aria-label="Cinta de alertas urgentes en tiempo real"
-      className="w-full bg-[#111315] text-white py-2 px-2 overflow-hidden border-y border-white/10"
+      className="w-full max-w-full bg-[#111315] text-white py-2 px-2 overflow-hidden border-y border-white/10"
     >
-      <div className="flex items-center space-x-8 animate-[marquee_35s_linear_infinite] hover:[animation-play-state:paused] whitespace-nowrap">
+      <div className="flex w-max items-center space-x-8 animate-[marquee_35s_linear_infinite] hover:[animation-play-state:paused] whitespace-nowrap">
         {/* Urgent alert items */}
         {urgentPets.map((pet) => (
           <div

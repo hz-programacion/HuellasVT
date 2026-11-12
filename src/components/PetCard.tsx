@@ -189,6 +189,11 @@ export const PetCard: React.FC<PetCardProps> = ({
                 🚨 TRÁNSITO
               </span>
             )}
+            {pet.linkedCampaignId && (
+              <span className="px-2 py-1 rounded-lg text-[10px] font-mono font-bold bg-emerald-950/90 text-emerald-300 border border-emerald-400/40">
+                💸 COLECTA
+              </span>
+            )}
           </div>
 
           <span className="px-2 py-1 rounded-lg bg-black/70 backdrop-blur-md text-white/95 text-[10px] font-mono flex items-center gap-1">

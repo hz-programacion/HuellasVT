@@ -5,6 +5,7 @@ import { Pet } from '../types';
  */
 
 const LAST_PUBLISH_KEY = 'huella_vt_last_publish_ts';
+const OWNED_PETS_STORAGE_KEY = 'huella_vt_device_owned_pets_v1';
 const MIN_PUBLISH_INTERVAL_MS = 15 * 1000; // 15 seconds cooldown between posts
 
 /**
@@ -71,7 +72,7 @@ export function validateAndFormatWhatsApp(rawPhone: string): {
 }
 
 /**
- * Extracts the last 4 digits of a phone number for ownership verification
+ * Extracts the last 4 digits of a phone number
  */
 export function getPhoneLast4Digits(rawPhone: string): string {
   const digits = (rawPhone || '').replace(/\D/g, '');
@@ -80,8 +81,7 @@ export function getPhoneLast4Digits(rawPhone: string): string {
 }
 
 /**
- * Returns a masked hint of the publisher's phone (e.g. "3462 ••••23")
- * so the real owner knows which phone number was used without exposing the full last 4 digits.
+ * Returns a masked hint of the publisher's phone (e.g. "•••• ••23")
  */
 export function getMaskedPhoneHint(rawPhone: string): string {
   const digits = (rawPhone || '').replace(/\D/g, '');
@@ -90,24 +90,100 @@ export function getMaskedPhoneHint(rawPhone: string): string {
   return `•••• ••${last2}`;
 }
 
+/**
+ * Generates a random 4-digit private security PIN that is different from the phone's last 4 digits
+ */
+export function generateRandomSecurityPin(rawPhone = ''): string {
+  const phoneLast4 = getPhoneLast4Digits(rawPhone);
+  let pin = String(Math.floor(1000 + Math.random() * 9000));
+  if (pin === phoneLast4) {
+    pin = String(((Number(pin) + 1357) % 9000) + 1000);
+  }
+  return pin;
+}
+
+/**
+ * Derives the private 4-digit secret PIN for a pet.
+ * Never equals the public phone number's last 4 digits.
+ */
+export function deriveSecretPinForPet(
+  pet: Pick<Pet, 'id' | 'authorWhatsApp' | 'securityPin'>
+): string {
+  const phoneLast4 = getPhoneLast4Digits(pet.authorWhatsApp);
+  if (pet.securityPin && /^\d{4,6}$/.test(pet.securityPin.trim()) && pet.securityPin.trim() !== phoneLast4) {
+    return pet.securityPin.trim();
+  }
+  const seedStr = `${pet.id || 'vt'}-secret-pin`;
+  let hash = 2166136261;
+  for (let i = 0; i < seedStr.length; i++) {
+    hash ^= seedStr.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  let code = String((Math.abs(hash) % 9000) + 1000);
+  if (code === phoneLast4) {
+    code = String(((Number(code) + 2468) % 9000) + 1000);
+  }
+  return code;
+}
+
+/**
+ * Records that the current browser/device created this pet alert so the owner is recognized seamlessly
+ */
+export function recordDeviceOwnedPet(petId: string, securityPin: string): void {
+  if (typeof localStorage === 'undefined' || !petId) return;
+  try {
+    const raw = localStorage.getItem(OWNED_PETS_STORAGE_KEY);
+    const map: Record<string, string> = raw ? JSON.parse(raw) : {};
+    map[petId] = securityPin;
+    localStorage.setItem(OWNED_PETS_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function isPetOwnedByCurrentDevice(petId?: string): boolean {
+  if (typeof localStorage === 'undefined' || !petId) return false;
+  try {
+    const raw = localStorage.getItem(OWNED_PETS_STORAGE_KEY);
+    if (!raw) return false;
+    const map: Record<string, string> = JSON.parse(raw);
+    return Boolean(map[petId]);
+  } catch {
+    return false;
+  }
+}
+
 export interface HappyEndingVerificationResult {
   authorized: boolean;
-  method?: 'admin' | 'owner_account' | 'phone_last4';
+  method?: 'admin' | 'owner_account' | 'device_owner' | 'secret_pin';
   error?: string;
 }
 
 /**
  * Verifies whether a user is authorized to mark a pet report as "Final Feliz / Resuelto".
- * Prevents accidental 1-click status changes by random visitors.
+ * Explicitly blocks using the public phone number's last 4 digits because the phone is visible on the card.
+ * Requires either:
+ *  - Authenticated publisher UID
+ *  - Device ownership token (created on this device)
+ *  - Private 4-digit Security PIN (created at publication time, never shown on public cards)
+ *  - Master Moderator Code ('VT24')
  */
 export function verifyHappyEndingAuthorization(params: {
-  pet: Pick<Pet, 'authorWhatsApp' | 'authorUid'>;
+  pet: Pick<Pet, 'id' | 'authorWhatsApp' | 'authorUid' | 'securityPin'>;
   inputCode: string;
   confirmedSafeCheckbox: boolean;
   currentUserUid?: string | null;
+  isDeviceOwner?: boolean;
   isSuperAdmin?: boolean;
 }): HappyEndingVerificationResult {
-  const { pet, inputCode, confirmedSafeCheckbox, currentUserUid, isSuperAdmin } = params;
+  const {
+    pet,
+    inputCode,
+    confirmedSafeCheckbox,
+    currentUserUid,
+    isDeviceOwner,
+    isSuperAdmin,
+  } = params;
 
   if (!confirmedSafeCheckbox) {
     return {
@@ -126,25 +202,35 @@ export function verifyHappyEndingAuthorization(params: {
     return { authorized: true, method: 'owner_account' };
   }
 
-  // 3. Phone last 4 digits or Master Moderators Code ('VT24')
+  // 3. Created on this browser/device
+  if (isDeviceOwner || isPetOwnedByCurrentDevice(pet.id)) {
+    return { authorized: true, method: 'device_owner' };
+  }
+
+  // 4. Master Moderator Code ('VT24') or Private Secret PIN
   const cleanInput = (inputCode || '').trim().toUpperCase();
   if (cleanInput === 'VT24') {
     return { authorized: true, method: 'admin' };
   }
 
-  const inputDigits = cleanInput.replace(/\D/g, '');
-  const expectedLast4 = getPhoneLast4Digits(pet.authorWhatsApp);
+  const publicPhoneLast4 = getPhoneLast4Digits(pet.authorWhatsApp);
+  if (cleanInput && cleanInput === publicPhoneLast4) {
+    return {
+      authorized: false,
+      error:
+        'Por seguridad anti-sabotaje, no se aceptan los últimos 4 números del teléfono (ya que el número es público en la ficha). Ingresá tu PIN Secreto de 4 dígitos creado al publicar.',
+    };
+  }
 
-  if (inputDigits.length >= 4 && expectedLast4.length === 4) {
-    if (inputDigits.slice(-4) === expectedLast4) {
-      return { authorized: true, method: 'phone_last4' };
-    }
+  const expectedSecretPin = deriveSecretPinForPet(pet);
+  if (cleanInput && cleanInput === expectedSecretPin.toUpperCase()) {
+    return { authorized: true, method: 'secret_pin' };
   }
 
   return {
     authorized: false,
     error:
-      'Código incorrecto. Ingresá los últimos 4 dígitos del WhatsApp con el que se publicó el aviso.',
+      'PIN Secreto incorrecto. Ingresá la Clave Privada de 4 dígitos que recibiste al publicar el aviso (o usá el botón para avisar al dueño por WhatsApp).',
   };
 }
 

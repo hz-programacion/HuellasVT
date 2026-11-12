@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
 interface FluidAtmosphereProps {
-  currentTab: 'radar' | 'adoptions' | 'emergency' | 'directory';
+  currentTab: 'radar' | 'adoptions' | 'campaigns' | 'emergency' | 'directory' | 'stories';
 }
 
 /**
@@ -9,8 +9,10 @@ interface FluidAtmosphereProps {
  * Changes chromatic temperature smoothly according to the active section in Venado Tuerto:
  * - radar: Warm Electric Coral & Amber
  * - adoptions: Sanctuary Violet & Rose
+ * - campaigns: Solidarity Emerald & Warm Gold
  * - emergency: Active Guard Emerald
  * - directory: Editorial Gold
+ * - stories: Warm Celebration Gold & Coral
  */
 export const FluidAtmosphere: React.FC<FluidAtmosphereProps> = ({ currentTab }) => {
   const [pointer, setPointer] = useState({ x: 50, y: 25 });
@@ -34,6 +36,10 @@ export const FluidAtmosphere: React.FC<FluidAtmosphereProps> = ({ currentTab }) 
       primary: 'rgba(124, 58, 237, 0.09)',
       secondary: 'rgba(236, 72, 153, 0.06)',
     },
+    campaigns: {
+      primary: 'rgba(5, 150, 105, 0.09)',
+      secondary: 'rgba(245, 158, 11, 0.065)',
+    },
     emergency: {
       primary: 'rgba(16, 185, 129, 0.095)',
       secondary: 'rgba(5, 150, 105, 0.06)',
@@ -41,6 +47,10 @@ export const FluidAtmosphere: React.FC<FluidAtmosphereProps> = ({ currentTab }) 
     directory: {
       primary: 'rgba(245, 158, 11, 0.09)',
       secondary: 'rgba(255, 77, 56, 0.055)',
+    },
+    stories: {
+      primary: 'rgba(245, 158, 11, 0.10)',
+      secondary: 'rgba(16, 185, 129, 0.065)',
     },
   }[currentTab];
 

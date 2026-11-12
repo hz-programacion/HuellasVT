@@ -1,6 +1,17 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Pet, Sponsor } from './types';
-import { getPets, getSponsors, updatePetStatus, subscribeToDataChanges } from './services/dataService';
+import { Pet, Sponsor, SolidarityCampaign } from './types';
+import {
+  getPets,
+  getSponsors,
+  getCampaigns,
+  updatePetStatus,
+  createSolidarityCampaign,
+  reportCampaignTransfer,
+  toggleSupplyItemStatus,
+  updateCampaignAdmin,
+  applaudPetReunion,
+  subscribeToDataChanges,
+} from './services/dataService';
 import { findSmartMatches } from './utils/matching';
 import { triggerHappyEndingConfetti } from './utils/confetti';
 import { Header } from './components/Header';
@@ -9,8 +20,11 @@ import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { Hero } from './components/Hero';
 import { RadarSection } from './components/RadarSection';
 import { AdoptionsSection } from './components/AdoptionsSection';
+import { CampaignsSection } from './components/CampaignsSection';
+import { CreateCampaignModal } from './components/CreateCampaignModal';
 import { EmergencySosSection } from './components/EmergencySosSection';
 import { DirectorySection } from './components/DirectorySection';
+import { HappyStoriesSection } from './components/HappyStoriesSection';
 import { PublishModal } from './components/PublishModal';
 import { StoryCanvasModal } from './components/StoryCanvasModal';
 import { SmartMatchModal } from './components/SmartMatchModal';
@@ -26,10 +40,16 @@ import { Sparkles, Shield } from 'lucide-react';
 export default function App() {
   const [pets, setPets] = useState<Pet[]>([]);
   const [sponsors, setSponsors] = useState<Sponsor[]>([]);
-  const [currentTab, setCurrentTab] = useState<'radar' | 'adoptions' | 'emergency' | 'directory'>('radar');
+  const [campaigns, setCampaigns] = useState<SolidarityCampaign[]>([]);
+  const [currentTab, setCurrentTab] = useState<
+    'radar' | 'adoptions' | 'campaigns' | 'emergency' | 'directory' | 'stories'
+  >('radar');
 
   // Modals state
   const [isPublishOpen, setIsPublishOpen] = useState(false);
+  const [isCreateCampaignOpen, setIsCreateCampaignOpen] = useState(false);
+  const [preselectedPetForCampaign, setPreselectedPetForCampaign] = useState<string | null>(null);
+  const [highlightedCampaignId, setHighlightedCampaignId] = useState<string | null>(null);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [selectedPetForStory, setSelectedPetForStory] = useState<Pet | null>(null);
@@ -76,12 +96,17 @@ export default function App() {
 
   const toggleTheme = () => setIsDark((prev) => !prev);
 
-  // Load pets and sponsors
+  // Load pets, sponsors, and solidarity campaigns
   const loadData = useCallback(async () => {
     try {
-      const [loadedPets, loadedSponsors] = await Promise.all([getPets(), getSponsors()]);
+      const [loadedPets, loadedSponsors, loadedCampaigns] = await Promise.all([
+        getPets(),
+        getSponsors(),
+        getCampaigns(),
+      ]);
       setPets(loadedPets);
       setSponsors(loadedSponsors);
+      setCampaigns(loadedCampaigns);
     } catch (err) {
       console.warn('Error loading data:', err);
     }
@@ -137,7 +162,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF7F2] text-[#111315] dark:bg-[#0B0C0E] dark:text-[#EDEDED] relative transition-colors duration-300">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden flex flex-col bg-[#FAF7F2] text-[#111315] dark:bg-[#0B0C0E] dark:text-[#EDEDED] relative transition-colors duration-300">
       {/* Subtle Analog Grain Texture Overlay */}
       <div className="grain-overlay" aria-hidden="true" />
 
@@ -173,18 +198,18 @@ export default function App() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed top-20 right-4 z-50 p-4 rounded-2xl bg-[#111315] dark:bg-white text-white dark:text-[#111315] shadow-2xl flex items-center gap-3 border border-amber-500/50 animate-in fade-in slide-in-from-top-4 duration-300 max-w-md"
+          className="fixed top-20 right-4 left-4 sm:left-auto z-50 p-4 rounded-2xl bg-[#111315] dark:bg-white text-white dark:text-[#111315] shadow-2xl flex items-center gap-3 border border-amber-500/50 animate-in fade-in slide-in-from-top-4 duration-300 max-w-md"
         >
           <span className="p-2 rounded-xl bg-[#F59E0B] text-black shrink-0">
             <Sparkles className="w-5 h-5 fill-black" />
           </span>
-          <div className="text-xs">
+          <div className="text-xs min-w-0 flex-1">
             <span className="font-display font-bold block text-sm">¡Final Feliz Verificado!</span>
-            <span>{happyEndingNotice}</span>
+            <span className="break-words">{happyEndingNotice}</span>
           </div>
           <button
             onClick={() => setHappyEndingNotice(null)}
-            className="text-neutral-400 hover:text-white dark:hover:text-black ml-2"
+            className="text-neutral-400 hover:text-white dark:hover:text-black ml-2 shrink-0"
           >
             ✕
           </button>
@@ -192,7 +217,7 @@ export default function App() {
       )}
 
       {/* Main Content Areas */}
-      <main className="flex-1 pb-24 lg:pb-12">
+      <main className="flex-1 w-full max-w-full overflow-x-hidden pb-24 lg:pb-12">
         {currentTab === 'radar' && (
           <>
             <Hero
@@ -230,12 +255,56 @@ export default function App() {
           />
         )}
 
+        {currentTab === 'campaigns' && (
+          <CampaignsSection
+            campaigns={campaigns}
+            sponsors={sponsors}
+            highlightedCampaignId={highlightedCampaignId}
+            onOpenCreateCampaign={() => {
+              setPreselectedPetForCampaign(null);
+              setIsCreateCampaignOpen(true);
+            }}
+            onReportTransfer={async (campaignId, payload) => {
+              await reportCampaignTransfer(campaignId, payload);
+              triggerHappyEndingConfetti();
+              await loadData();
+            }}
+            onToggleSupplyItem={async (campaignId, supplyId, incrementByOne) => {
+              await toggleSupplyItemStatus(campaignId, supplyId, incrementByOne);
+              await loadData();
+            }}
+            onUploadPaidReceipt={async (campaignId, receiptBase64) => {
+              await updateCampaignAdmin(campaignId, {
+                paidReceiptBase64: receiptBase64,
+                paidReceiptCaption: 'Factura veterinaria abonada con fondos comunitarios',
+              });
+              triggerHappyEndingConfetti();
+              await loadData();
+            }}
+          />
+        )}
+
         {currentTab === 'emergency' && (
           <EmergencySosSection sponsors={sponsors} />
         )}
 
         {currentTab === 'directory' && (
           <DirectorySection sponsors={sponsors} />
+        )}
+
+        {currentTab === 'stories' && (
+          <HappyStoriesSection
+            pets={pets}
+            campaigns={campaigns}
+            onOpenDetail={(pet) => setSelectedPetForDetail(pet)}
+            onMarkHappyEnding={(pet) => setSelectedPetForHappyEnding(pet)}
+            onGoToCampaigns={() => setCurrentTab('campaigns')}
+            onApplaudStory={async (petId) => {
+              await applaudPetReunion(petId);
+              triggerHappyEndingConfetti();
+              await loadData();
+            }}
+          />
         )}
       </main>
 
@@ -297,6 +366,18 @@ export default function App() {
         />
       )}
 
+      <CreateCampaignModal
+        isOpen={isCreateCampaignOpen}
+        onClose={() => setIsCreateCampaignOpen(false)}
+        pets={pets}
+        preselectedPetId={preselectedPetForCampaign}
+        onCreateCampaign={async (payload) => {
+          const created = await createSolidarityCampaign(payload);
+          await loadData();
+          return created;
+        }}
+      />
+
       {selectedPetForStory && (
         <StoryCanvasModal
           pet={selectedPetForStory}
@@ -329,6 +410,15 @@ export default function App() {
           onOpenStoryCanvas={(pet) => setSelectedPetForStory(pet)}
           onOpenSmartMatch={(pet) => setSelectedPetForMatch(pet)}
           onMarkHappyEnding={(pet) => setSelectedPetForHappyEnding(pet)}
+          onGoToCampaign={(campaignId) => {
+            setHighlightedCampaignId(campaignId || null);
+            setCurrentTab('campaigns');
+          }}
+          onStartCampaignForPet={(pet) => {
+            setPreselectedPetForCampaign(pet.id);
+            setCurrentTab('campaigns');
+            setIsCreateCampaignOpen(true);
+          }}
         />
       )}
 
@@ -344,6 +434,7 @@ export default function App() {
         <AdminDashboard
           pets={pets}
           sponsors={sponsors}
+          campaigns={campaigns}
           onClose={() => setIsAdminOpen(false)}
           onDataRefresh={loadData}
         />

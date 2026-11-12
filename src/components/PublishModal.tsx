@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
 import { Pet, PetStatus, PetSpecies, PetSize, PetAge, VENADO_TUERTO_BARRIOS } from '../types';
 import { compressImageFile, formatFileSize, CompressionResult } from '../utils/imageCompressor';
-import { validateAndFormatWhatsApp, checkPublishRateLimit } from '../utils/security';
+import {
+  validateAndFormatWhatsApp,
+  checkPublishRateLimit,
+  generateRandomSecurityPin,
+} from '../utils/security';
 import { savePet, getCurrentUser, loginWithGoogle } from '../services/dataService';
 import {
   X,
@@ -12,6 +16,7 @@ import {
   ArrowLeft,
   Sparkles,
   ShieldCheck,
+  KeyRound,
 } from 'lucide-react';
 
 interface PublishModalProps {
@@ -54,6 +59,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({ onClose, onPetCreate
   // Step 3 states
   const [authorName, setAuthorName] = useState(() => getCurrentUser()?.displayName || '');
   const [authorWhatsApp, setAuthorWhatsApp] = useState('');
+  const [securityPin, setSecurityPin] = useState(() => generateRandomSecurityPin());
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -575,6 +581,32 @@ export const PublishModal: React.FC<PublishModalProps> = ({ onClose, onPetCreate
                 <p className="text-[11px] text-neutral-400 mt-1 font-mono">
                   Sugerencia para Venado Tuerto: 3462 XXXXXX
                 </p>
+              </div>
+
+              {/* Private 4-Digit Security PIN to prevent public phone spoofing */}
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-mono font-bold uppercase text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                    <KeyRound className="w-3.5 h-3.5" />
+                    PIN Secreto de Cierre (4 dígitos privados)
+                  </label>
+                  <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-900 dark:text-amber-200 font-mono text-[10px] font-bold">
+                    NO PÚBLICO
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={securityPin}
+                    onChange={(e) => setSecurityPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    className="w-28 px-3 py-1.5 rounded-lg border border-amber-500/40 bg-white dark:bg-[#111315] font-mono text-base font-extrabold tracking-widest text-center text-[#111315] dark:text-white"
+                  />
+                  <p className="text-[11px] text-neutral-600 dark:text-neutral-300 leading-snug flex-1">
+                    Guardá este PIN (distinto a tu teléfono). Como tu WhatsApp es público para recibir ayuda, solo este PIN privado o este dispositivo podrán marcar el <strong>Final Feliz</strong>.
+                  </p>
+                </div>
               </div>
             </div>
           )}

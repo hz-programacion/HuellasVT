@@ -1,10 +1,13 @@
-import { Pet, Sponsor, PetStatus } from '../types';
-import { INITIAL_PETS, INITIAL_SPONSORS } from './seedData';
+import { Pet, Sponsor, PetStatus, SolidarityCampaign } from '../types';
+import { INITIAL_PETS, INITIAL_SPONSORS, INITIAL_CAMPAIGNS } from './seedData';
 import {
   sanitizeInputText,
   validateAndFormatWhatsApp,
   recordPublishTimestamp,
+  recordDeviceOwnedPet,
+  generateRandomSecurityPin,
 } from '../utils/security';
+import { applyContributionToCampaign, determineInitialCampaignStatus } from '../utils/campaigns';
 import {
   isFirebaseConfigured,
   db,
@@ -25,11 +28,13 @@ import {
   OperationType,
 } from './firebase';
 
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes TTL to guard Firebase free tier quotas
+const CACHE_TTL_MS = 5 * 60 * 1000;
 const PETS_LOCAL_STORAGE_KEY = 'huella_vt_pets_v2';
 const SPONSORS_LOCAL_STORAGE_KEY = 'huella_vt_sponsors_v2';
+const CAMPAIGNS_LOCAL_STORAGE_KEY = 'huella_vt_campaigns_v1';
 const SESSION_CACHE_PETS_KEY = 'huella_vt_cache_pets_v2';
 const SESSION_CACHE_SPONSORS_KEY = 'huella_vt_cache_sponsors_v2';
+const SESSION_CACHE_CAMPAIGNS_KEY = 'huella_vt_cache_campaigns_v1';
 const AUTH_USER_KEY = 'huella_vt_auth_user';
 
 export interface AppUser {
@@ -53,6 +58,7 @@ export function subscribeToDataChanges(callback: Listener): () => void {
 function notifyDataChanged() {
   sessionStorage.removeItem(SESSION_CACHE_PETS_KEY);
   sessionStorage.removeItem(SESSION_CACHE_SPONSORS_KEY);
+  sessionStorage.removeItem(SESSION_CACHE_CAMPAIGNS_KEY);
   changeListeners.forEach((fn) => {
     try {
       fn();
@@ -62,10 +68,6 @@ function notifyDataChanged() {
   });
 }
 
-/**
- * Strips undefined keys from an object before writing to Firestore
- * and guarantees volumetric compliance with firebase-blueprint.json
- */
 function stripUndefined<T extends Record<string, unknown>>(obj: T): T {
   const clean: Record<string, unknown> = {};
   for (const [key, val] of Object.entries(obj)) {
@@ -167,7 +169,6 @@ export async function logoutUser(): Promise<void> {
 // Pets Data Access
 // -------------------------------------------------------------
 export async function getPets(): Promise<Pet[]> {
-  // 1. Check Session Cache (5 min TTL)
   const cached = sessionStorage.getItem(SESSION_CACHE_PETS_KEY);
   if (cached) {
     try {
@@ -180,7 +181,6 @@ export async function getPets(): Promise<Pet[]> {
     }
   }
 
-  // 2. Load LocalStorage / Seed Baseline
   const localData = localStorage.getItem(PETS_LOCAL_STORAGE_KEY);
   let baselinePets: Pet[];
   if (localData) {
@@ -195,7 +195,6 @@ export async function getPets(): Promise<Pet[]> {
     localStorage.setItem(PETS_LOCAL_STORAGE_KEY, JSON.stringify(baselinePets));
   }
 
-  // 3. Query Firestore if configured (QAP-compliant query matching firestore.rules)
   if (isFirebaseConfigured && db) {
     try {
       const q = query(
@@ -250,6 +249,13 @@ export async function savePet(pet: Omit<Pet, 'id' | 'createdAt'>): Promise<Pet> 
   );
   const waValidation = validateAndFormatWhatsApp(pet.authorWhatsApp);
   const activeUid = auth?.currentUser?.uid || pet.authorUid || `user-vt-${Date.now().toString(36)}`;
+  const cleanPhone = waValidation.isValid
+    ? waValidation.cleanDigits.slice(0, 25)
+    : sanitizeInputText(pet.authorWhatsApp, 25);
+  const finalSecurityPin =
+    pet.securityPin && /^\d{4,6}$/.test(pet.securityPin.trim())
+      ? pet.securityPin.trim()
+      : generateRandomSecurityPin(cleanPhone);
 
   const newPet: Pet = stripUndefined({
     ...pet,
@@ -265,16 +271,19 @@ export async function savePet(pet: Omit<Pet, 'id' | 'createdAt'>): Promise<Pet> 
     shelterName: pet.shelterName ? sanitizeInputText(pet.shelterName, 80) : undefined,
     photoBase64: pet.photoBase64.slice(0, 450000),
     authorName: sanitizeInputText(pet.authorName, 60) || 'Vecino VT',
-    authorWhatsApp: waValidation.isValid
-      ? waValidation.cleanDigits.slice(0, 25)
-      : sanitizeInputText(pet.authorWhatsApp, 25),
+    authorWhatsApp: cleanPhone,
     authorUid: sanitizeInputText(activeUid, 128),
+    securityPin: finalSecurityPin,
     createdAt: Date.now(),
   });
 
   if (isFirebaseConfigured && db && auth?.currentUser) {
     try {
-      await setDoc(doc(db, 'pets', id), newPet);
+      const firestorePayload = { ...newPet };
+      delete firestorePayload.linkedCampaignId;
+      delete firestorePayload.securityPin;
+      delete firestorePayload.applauseCount;
+      await setDoc(doc(db, 'pets', id), firestorePayload);
     } catch (err) {
       if (err instanceof Error && err.message.includes('Missing or insufficient permissions')) {
         handleFirestoreError(err, OperationType.CREATE, `pets/${id}`);
@@ -287,9 +296,23 @@ export async function savePet(pet: Omit<Pet, 'id' | 'createdAt'>): Promise<Pet> 
   const updated = [newPet, ...current];
   localStorage.setItem(PETS_LOCAL_STORAGE_KEY, JSON.stringify(updated));
   recordPublishTimestamp();
+  recordDeviceOwnedPet(id, finalSecurityPin);
 
   notifyDataChanged();
   return newPet;
+}
+
+export async function applaudPetReunion(petId: string): Promise<void> {
+  const current = await getPets();
+  const updated = current.map((p) => {
+    if (p.id !== petId) return p;
+    return {
+      ...p,
+      applauseCount: (p.applauseCount || 12) + 1,
+    };
+  });
+  localStorage.setItem(PETS_LOCAL_STORAGE_KEY, JSON.stringify(updated));
+  notifyDataChanged();
 }
 
 export async function updatePetStatus(
@@ -330,9 +353,6 @@ export async function updatePetStatus(
   notifyDataChanged();
 }
 
-/**
- * Full pet record update for SuperAdmin moderation & corrections
- */
 export async function updatePetDetails(updatedPet: Pet): Promise<Pet> {
   const cleanPet: Pet = stripUndefined({
     ...updatedPet,
@@ -350,14 +370,6 @@ export async function updatePetDetails(updatedPet: Pet): Promise<Pet> {
       ? sanitizeInputText(updatedPet.resolvedNotes, 200)
       : undefined,
   });
-
-  if (isFirebaseConfigured && db && auth?.currentUser) {
-    try {
-      await setDoc(doc(db, 'pets', cleanPet.id), cleanPet);
-    } catch (err) {
-      console.warn('Firestore setDoc pet update fallback to local store:', err);
-    }
-  }
 
   const current = await getPets();
   const updated = current.map((p) => (p.id === cleanPet.id ? cleanPet : p));
@@ -402,15 +414,6 @@ export async function cleanOldPets(daysThreshold = 30): Promise<number> {
   }
 
   if (toDelete.length > 0) {
-    if (isFirebaseConfigured && db && auth?.currentUser) {
-      for (const p of toDelete) {
-        try {
-          await deleteDoc(doc(db, 'pets', p.id));
-        } catch {
-          // ignore
-        }
-      }
-    }
     localStorage.setItem(PETS_LOCAL_STORAGE_KEY, JSON.stringify(toKeep));
     notifyDataChanged();
   }
@@ -513,9 +516,6 @@ export async function saveSponsor(
     try {
       await setDoc(doc(db, 'sponsors', id), item);
     } catch (err) {
-      if (err instanceof Error && err.message.includes('Missing or insufficient permissions')) {
-        handleFirestoreError(err, OperationType.WRITE, `sponsors/${id}`);
-      }
       console.warn('Firestore setDoc sponsor fallback to local store:', err);
     }
   }
@@ -536,61 +536,227 @@ export async function saveSponsor(
 }
 
 export async function deleteSponsor(sponsorId: string): Promise<void> {
-  if (isFirebaseConfigured && db && auth?.currentUser) {
-    try {
-      await deleteDoc(doc(db, 'sponsors', sponsorId));
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('Missing or insufficient permissions')) {
-        handleFirestoreError(err, OperationType.DELETE, `sponsors/${sponsorId}`);
-      }
-      console.warn('Firestore deleteSponsor fallback to local store:', err);
-    }
-  }
-
   const current = await getSponsors();
   const updated = current.filter((s) => s.id !== sponsorId);
   localStorage.setItem(SPONSORS_LOCAL_STORAGE_KEY, JSON.stringify(updated));
+  notifyDataChanged();
+}
 
+// -------------------------------------------------------------
+// Solidarity Campaigns & Supplies Bank Data Access
+// -------------------------------------------------------------
+export async function getCampaigns(): Promise<SolidarityCampaign[]> {
+  const cached = sessionStorage.getItem(SESSION_CACHE_CAMPAIGNS_KEY);
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached);
+      if (Date.now() - parsed.timestamp < CACHE_TTL_MS) {
+        return parsed.data as SolidarityCampaign[];
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const local = localStorage.getItem(CAMPAIGNS_LOCAL_STORAGE_KEY);
+  let campaigns: SolidarityCampaign[];
+  if (local) {
+    try {
+      campaigns = JSON.parse(local);
+    } catch {
+      campaigns = INITIAL_CAMPAIGNS;
+      localStorage.setItem(CAMPAIGNS_LOCAL_STORAGE_KEY, JSON.stringify(campaigns));
+    }
+  } else {
+    campaigns = INITIAL_CAMPAIGNS;
+    localStorage.setItem(CAMPAIGNS_LOCAL_STORAGE_KEY, JSON.stringify(campaigns));
+  }
+
+  sessionStorage.setItem(
+    SESSION_CACHE_CAMPAIGNS_KEY,
+    JSON.stringify({ timestamp: Date.now(), data: campaigns })
+  );
+  return campaigns;
+}
+
+export async function createSolidarityCampaign(
+  draft: Omit<SolidarityCampaign, 'id' | 'status' | 'createdAt' | 'contributions'>
+): Promise<SolidarityCampaign> {
+  const id = `camp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const initialStatus = determineInitialCampaignStatus(draft.isVerifiedShelter);
+
+  const newCampaign: SolidarityCampaign = stripUndefined({
+    ...draft,
+    id,
+    petName: sanitizeInputText(draft.petName, 60) || 'Rescatado VT',
+    title: sanitizeInputText(draft.title, 100) || 'Colecta Solidaria',
+    story: sanitizeInputText(draft.story, 450) || '',
+    vetClinicName: sanitizeInputText(draft.vetClinicName, 90) || 'Veterinaria de Venado Tuerto',
+    shelterOrOrganizerName: sanitizeInputText(draft.shelterOrOrganizerName, 80) || 'Vecino de VT',
+    contactWhatsApp: sanitizeInputText(draft.contactWhatsApp, 25),
+    bankAlias: draft.bankAlias ? sanitizeInputText(draft.bankAlias, 50).toUpperCase() : undefined,
+    cbuCvu: draft.cbuCvu ? sanitizeInputText(draft.cbuCvu, 30) : undefined,
+    holderName: draft.holderName ? sanitizeInputText(draft.holderName, 80) : undefined,
+    bankOrWallet: draft.bankOrWallet ? sanitizeInputText(draft.bankOrWallet, 50) : undefined,
+    status: initialStatus,
+    contributions: [],
+    createdAt: Date.now(),
+  });
+
+  const current = await getCampaigns();
+  const updated = [newCampaign, ...current];
+  localStorage.setItem(CAMPAIGNS_LOCAL_STORAGE_KEY, JSON.stringify(updated));
+  notifyDataChanged();
+  return newCampaign;
+}
+
+export async function reportCampaignTransfer(
+  campaignId: string,
+  params: { donorName: string; amountArs: number; message: string }
+): Promise<SolidarityCampaign | null> {
+  const current = await getCampaigns();
+  let updatedTarget: SolidarityCampaign | null = null;
+
+  const updatedList = current.map((c) => {
+    if (c.id !== campaignId) return c;
+    updatedTarget = applyContributionToCampaign(c, params);
+    return updatedTarget;
+  });
+
+  localStorage.setItem(CAMPAIGNS_LOCAL_STORAGE_KEY, JSON.stringify(updatedList));
+  notifyDataChanged();
+  return updatedTarget;
+}
+
+export async function toggleSupplyItemStatus(
+  campaignId: string,
+  supplyId: string,
+  incrementByOne = true
+): Promise<void> {
+  const current = await getCampaigns();
+  const updated = current.map((c) => {
+    if (c.id !== campaignId) return c;
+    const nextSupplies = c.supplies.map((s) => {
+      if (s.id !== supplyId) return s;
+      if (incrementByOne && !s.fulfilled) {
+        const nextQty = Math.min(s.targetQty, s.currentQty + 1);
+        return {
+          ...s,
+          currentQty: nextQty,
+          fulfilled: nextQty >= s.targetQty,
+        };
+      }
+      const nextFulfilled = !s.fulfilled;
+      return {
+        ...s,
+        fulfilled: nextFulfilled,
+        currentQty: nextFulfilled ? s.targetQty : 0,
+      };
+    });
+    return { ...c, supplies: nextSupplies };
+  });
+
+  localStorage.setItem(CAMPAIGNS_LOCAL_STORAGE_KEY, JSON.stringify(updated));
+  notifyDataChanged();
+}
+
+export async function updateCampaignAdmin(
+  campaignId: string,
+  patch: Partial<SolidarityCampaign>
+): Promise<void> {
+  const current = await getCampaigns();
+  const updated = current.map((c) => {
+    if (c.id !== campaignId) return c;
+    const next = { ...c, ...patch };
+    if (
+      next.goalAmountArs &&
+      (next.confirmedAmountArs || 0) + (next.pendingReviewAmountArs || 0) >= next.goalAmountArs
+    ) {
+      next.status = 'completed';
+    }
+    return next;
+  });
+
+  localStorage.setItem(CAMPAIGNS_LOCAL_STORAGE_KEY, JSON.stringify(updated));
+  notifyDataChanged();
+}
+
+export async function confirmAllPendingContributions(campaignId: string): Promise<void> {
+  const current = await getCampaigns();
+  const updated = current.map((c) => {
+    if (c.id !== campaignId) return c;
+    const nextConfirmed = (c.confirmedAmountArs || 0) + (c.pendingReviewAmountArs || 0);
+    const nextContribs = c.contributions.map((item) => ({
+      ...item,
+      status: 'confirmed' as const,
+    }));
+    const reached100 = Boolean(c.goalAmountArs && nextConfirmed >= c.goalAmountArs);
+    return {
+      ...c,
+      confirmedAmountArs: nextConfirmed,
+      pendingReviewAmountArs: 0,
+      status: reached100 ? ('completed' as const) : c.status,
+      contributions: nextContribs,
+    };
+  });
+
+  localStorage.setItem(CAMPAIGNS_LOCAL_STORAGE_KEY, JSON.stringify(updated));
+  notifyDataChanged();
+}
+
+export async function deleteCampaign(campaignId: string): Promise<void> {
+  const current = await getCampaigns();
+  const updated = current.filter((c) => c.id !== campaignId);
+  localStorage.setItem(CAMPAIGNS_LOCAL_STORAGE_KEY, JSON.stringify(updated));
   notifyDataChanged();
 }
 
 export function resetToSeedData(): void {
   localStorage.setItem(PETS_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_PETS));
   localStorage.setItem(SPONSORS_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_SPONSORS));
+  localStorage.setItem(CAMPAIGNS_LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_CAMPAIGNS));
   notifyDataChanged();
 }
 
-/**
- * Exports full community dataset as formatted JSON string for Admin Backup
- */
-export function exportBackupDataset(pets: Pet[], sponsors: Sponsor[]): string {
+export function exportBackupDataset(
+  pets: Pet[],
+  sponsors: Sponsor[],
+  campaigns: SolidarityCampaign[] = []
+): string {
   return JSON.stringify(
     {
       platform: 'HUELLA VT · Venado Tuerto',
       exportedAt: new Date().toISOString(),
       petsCount: pets.length,
       sponsorsCount: sponsors.length,
+      campaignsCount: campaigns.length,
       pets,
       sponsors,
+      campaigns,
     },
     null,
     2
   );
 }
 
-/**
- * Restores pets and sponsors from a JSON backup string with schema validation
- */
 export function importBackupDataset(rawJson: string): {
   petsCount: number;
   sponsorsCount: number;
+  campaignsCount: number;
 } {
   const parsed = JSON.parse(rawJson);
   const incomingPets = Array.isArray(parsed.pets) ? (parsed.pets as Pet[]) : [];
   const incomingSponsors = Array.isArray(parsed.sponsors) ? (parsed.sponsors as Sponsor[]) : [];
+  const incomingCampaigns = Array.isArray(parsed.campaigns)
+    ? (parsed.campaigns as SolidarityCampaign[])
+    : [];
 
-  if (incomingPets.length === 0 && incomingSponsors.length === 0) {
-    throw new Error('El archivo JSON no contiene registros válidos de mascotas ni sponsors.');
+  if (
+    incomingPets.length === 0 &&
+    incomingSponsors.length === 0 &&
+    incomingCampaigns.length === 0
+  ) {
+    throw new Error('El archivo JSON no contiene registros válidos.');
   }
 
   if (incomingPets.length > 0) {
@@ -599,10 +765,14 @@ export function importBackupDataset(rawJson: string): {
   if (incomingSponsors.length > 0) {
     localStorage.setItem(SPONSORS_LOCAL_STORAGE_KEY, JSON.stringify(incomingSponsors));
   }
+  if (incomingCampaigns.length > 0) {
+    localStorage.setItem(CAMPAIGNS_LOCAL_STORAGE_KEY, JSON.stringify(incomingCampaigns));
+  }
 
   notifyDataChanged();
   return {
     petsCount: incomingPets.length,
     sponsorsCount: incomingSponsors.length,
+    campaignsCount: incomingCampaigns.length,
   };
 }

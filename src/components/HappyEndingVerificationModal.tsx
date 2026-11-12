@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Pet } from '../types';
 import {
-  getMaskedPhoneHint,
   verifyHappyEndingAuthorization,
   sanitizeInputText,
+  isPetOwnedByCurrentDevice,
 } from '../utils/security';
 import { getCurrentUser } from '../services/dataService';
 import {
@@ -15,7 +15,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   KeyRound,
-  HeartHandshake,
+  MessageCircle,
 } from 'lucide-react';
 
 interface HappyEndingVerificationModalProps {
@@ -31,7 +31,8 @@ export const HappyEndingVerificationModal: React.FC<HappyEndingVerificationModal
 }) => {
   const currentUser = getCurrentUser();
   const isOwnerSession = Boolean(
-    currentUser && pet.authorUid && currentUser.uid === pet.authorUid
+    (currentUser && pet.authorUid && currentUser.uid === pet.authorUid) ||
+      isPetOwnedByCurrentDevice(pet.id)
   );
 
   const [inputCode, setInputCode] = useState('');
@@ -40,10 +41,21 @@ export const HappyEndingVerificationModal: React.FC<HappyEndingVerificationModal
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const maskedHint = getMaskedPhoneHint(pet.authorWhatsApp);
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
+  const ownerWaNotifyUrl = `https://wa.me/549${pet.authorWhatsApp.replace(/\D/g, '')}?text=${encodeURIComponent(
+    `Hola ${pet.authorName}! Te escribo desde HUELLA VT por la publicación de *${pet.name}* (${pet.barrio}). Si ya volvió a casa, recordá entrar con tu PIN Secreto a marcar el "¡Final Feliz!" para actualizar el radar vecinal.`
+  )}`;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setErrorMsg(null);
 
     const verification = verifyHappyEndingAuthorization({
@@ -51,6 +63,7 @@ export const HappyEndingVerificationModal: React.FC<HappyEndingVerificationModal
       inputCode,
       confirmedSafeCheckbox: confirmedSafe,
       currentUserUid: currentUser?.uid,
+      isDeviceOwner: isOwnerSession,
     });
 
     if (!verification.authorized) {
@@ -97,7 +110,7 @@ export const HappyEndingVerificationModal: React.FC<HappyEndingVerificationModal
             </span>
             <div>
               <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-amber-700 dark:text-amber-400 block">
-                Protocolo Anti-Error · Confirmación Segura
+                Protocolo Anti-Sabotaje · PIN Privado
               </span>
               <h2 className="font-display font-extrabold text-base sm:text-lg text-[#111315] dark:text-white leading-tight">
                 ¿{pet.name} ya volvió a casa?
@@ -135,10 +148,10 @@ export const HappyEndingVerificationModal: React.FC<HappyEndingVerificationModal
                 </span>
               </div>
               <p className="text-xs font-mono text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
-                Publicado por: <strong className="text-[#111315] dark:text-white">{pet.authorName}</strong>
+                Autor: <strong className="text-[#111315] dark:text-white">{pet.authorName}</strong>
               </p>
-              <p className="text-[11px] font-mono text-neutral-400 mt-0.5">
-                WhatsApp registrado: {maskedHint}
+              <p className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 mt-0.5">
+                🔒 Protegido con PIN Secreto de Cierre (No usa teléfono público)
               </p>
             </div>
           </div>
@@ -147,48 +160,64 @@ export const HappyEndingVerificationModal: React.FC<HappyEndingVerificationModal
           <div className="p-3 rounded-xl bg-amber-500/8 border border-amber-500/20 text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed flex items-start gap-2.5">
             <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <div>
-              Para evitar que alguien marque por accidente a{' '}
-              <strong className="text-[#111315] dark:text-white">{pet.name}</strong> como encontrado
-              cuando aún sigue buscándose, validamos que seas quien publicó el aviso o un moderador.
+              Como el número de WhatsApp es público para facilitar el rescate,{' '}
+              <strong className="text-[#111315] dark:text-white">
+                no usamos los dígitos del teléfono
+              </strong>{' '}
+              para cerrar alertas. Solo el dispositivo autor o el <strong>PIN Secreto de 4 dígitos</strong> creado al publicar pueden confirmar el Final Feliz.
             </div>
           </div>
 
-          {/* Verification Input or Session Match */}
+          {/* Verification Input or Device/Session Match */}
           {isOwnerSession ? (
             <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2.5 text-xs text-emerald-800 dark:text-emerald-300 font-mono">
               <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
               <span>
-                Sesión verificada automáticamente como autor de la publicación (
-                <strong>{currentUser?.displayName}</strong>).
+                ¡Dispositivo / Cuenta Autora reconocida automáticamente! Podés confirmar el Final Feliz sin ingresar PIN.
               </span>
             </div>
           ) : (
-            <div>
-              <label
-                htmlFor="happy-ending-code-input"
-                className="block text-xs font-mono font-bold uppercase tracking-wider text-neutral-600 dark:text-neutral-300 mb-1.5"
-              >
-                Últimos 4 dígitos del WhatsApp del publicante ({maskedHint})
-              </label>
-              <div className="relative">
-                <KeyRound className="w-4 h-4 text-amber-500 absolute left-3.5 top-3.5" />
-                <input
-                  id="happy-ending-code-input"
-                  type="text"
-                  inputMode="text"
-                  maxLength={12}
-                  value={inputCode}
-                  onChange={(e) => {
-                    setInputCode(e.target.value);
-                    if (errorMsg) setErrorMsg(null);
-                  }}
-                  placeholder="Ej. últimos 4 números de tu celular..."
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-black/15 dark:border-white/15 bg-[#FAF7F2] dark:bg-[#0B0C0E] font-mono text-sm tracking-widest focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
-                />
+            <div className="space-y-2.5">
+              <div>
+                <label
+                  htmlFor="happy-ending-code-input"
+                  className="block text-xs font-mono font-bold uppercase tracking-wider text-neutral-600 dark:text-neutral-300 mb-1.5"
+                >
+                  PIN Secreto de Cierre (4 dígitos privados del autor)
+                </label>
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-amber-500 absolute left-3.5 top-3.5" />
+                  <input
+                    id="happy-ending-code-input"
+                    type="password"
+                    inputMode="text"
+                    maxLength={8}
+                    value={inputCode}
+                    onChange={(e) => {
+                      setInputCode(e.target.value);
+                      if (errorMsg) setErrorMsg(null);
+                    }}
+                    placeholder="Ingresá tu PIN Secreto de 4 dígitos..."
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-black/15 dark:border-white/15 bg-[#FAF7F2] dark:bg-[#0B0C0E] font-mono text-sm tracking-widest focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                  />
+                </div>
               </div>
-              <span className="text-[11px] font-mono text-neutral-400 block mt-1">
-                Ingresá los últimos 4 números del teléfono de {pet.authorName} para desbloquear el cambio de estado.
-              </span>
+
+              {/* Helper button for neighbors who don't have the owner's secret PIN */}
+              <div className="flex items-center justify-between gap-2 pt-0.5">
+                <span className="text-[11px] font-mono text-neutral-400">
+                  ¿Sos vecino y viste que ya apareció?
+                </span>
+                <a
+                  href={ownerWaNotifyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 text-[11px] font-mono font-bold transition"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  Avisar al dueño por WhatsApp
+                </a>
+              </div>
             </div>
           )}
 
