@@ -1,0 +1,290 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 1: Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Hardened Global Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'hz.mdiego@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Validation Blueprint: Pet Entity
+    function isValidPetShape(data, petId) {
+      return data.keys().hasAll([
+        'id',
+        'name',
+        'status',
+        'species',
+        'breed',
+        'color',
+        'gender',
+        'barrio',
+        'addressOrReference',
+        'date',
+        'description',
+        'photoBase64',
+        'authorName',
+        'authorWhatsApp',
+        'authorUid',
+        'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id',
+        'name',
+        'status',
+        'species',
+        'breed',
+        'color',
+        'gender',
+        'size',
+        'age',
+        'barrio',
+        'addressOrReference',
+        'date',
+        'description',
+        'collarInfo',
+        'isCastrated',
+        'isVaccinated',
+        'isKidFriendly',
+        'isUrgentTransit',
+        'shelterName',
+        'isVerifiedShelter',
+        'photoBase64',
+        'photoOriginalSizeKb',
+        'photoOptimizedSizeKb',
+        'authorName',
+        'authorWhatsApp',
+        'authorUid',
+        'lat',
+        'lng',
+        'createdAt',
+        'resolvedAt',
+        'resolvedNotes'
+      ]) &&
+      data.id == petId &&
+      data.id is string && data.id.size() >= 1 && data.id.size() <= 128 &&
+      data.name is string && data.name.size() >= 1 && data.name.size() <= 60 &&
+      data.status is string && data.status in ['lost', 'found', 'adoption', 'resolved'] &&
+      data.species is string && data.species in ['dog', 'cat', 'other'] &&
+      data.breed is string && data.breed.size() >= 1 && data.breed.size() <= 60 &&
+      data.color is string && data.color.size() >= 1 && data.color.size() <= 80 &&
+      data.gender is string && data.gender in ['male', 'female', 'unknown'] &&
+      (!('size' in data) || (data.size is string && data.size in ['small', 'medium', 'large'])) &&
+      (!('age' in data) || (data.age is string && data.age in ['puppy', 'young', 'adult', 'senior'])) &&
+      data.barrio is string && data.barrio.size() >= 2 && data.barrio.size() <= 60 &&
+      data.addressOrReference is string && data.addressOrReference.size() >= 2 && data.addressOrReference.size() <= 120 &&
+      data.date is string && data.date.size() >= 8 && data.date.size() <= 20 &&
+      data.description is string && data.description.size() >= 3 && data.description.size() <= 400 &&
+      (!('collarInfo' in data) || (data.collarInfo is string && data.collarInfo.size() >= 1 && data.collarInfo.size() <= 100)) &&
+      (!('isCastrated' in data) || data.isCastrated is bool) &&
+      (!('isVaccinated' in data) || data.isVaccinated is bool) &&
+      (!('isKidFriendly' in data) || data.isKidFriendly is bool) &&
+      (!('isUrgentTransit' in data) || data.isUrgentTransit is bool) &&
+      (!('shelterName' in data) || (data.shelterName is string && data.shelterName.size() >= 1 && data.shelterName.size() <= 80)) &&
+      (!('isVerifiedShelter' in data) || data.isVerifiedShelter is bool) &&
+      data.photoBase64 is string && data.photoBase64.size() >= 10 && data.photoBase64.size() <= 450000 &&
+      (!('photoOriginalSizeKb' in data) || (data.photoOriginalSizeKb is number && data.photoOriginalSizeKb >= 0 && data.photoOriginalSizeKb <= 50000)) &&
+      (!('photoOptimizedSizeKb' in data) || (data.photoOptimizedSizeKb is number && data.photoOptimizedSizeKb >= 0 && data.photoOptimizedSizeKb <= 1000)) &&
+      data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 60 &&
+      data.authorWhatsApp is string && data.authorWhatsApp.size() >= 6 && data.authorWhatsApp.size() <= 25 &&
+      data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+      (!('lat' in data) || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
+      (!('lng' in data) || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
+      data.createdAt is number && data.createdAt > 0 &&
+      (!('resolvedAt' in data) || (data.resolvedAt is number && data.resolvedAt >= data.createdAt)) &&
+      (!('resolvedNotes' in data) || (data.resolvedNotes is string && data.resolvedNotes.size() >= 1 && data.resolvedNotes.size() <= 200));
+    }
+
+    // Validation Blueprint: Sponsor Entity
+    function isValidSponsorShape(data, sponsorId) {
+      return data.keys().hasAll([
+        'id',
+        'name',
+        'category',
+        'tier',
+        'isOnDutyToday',
+        'address',
+        'phone',
+        'whatsApp',
+        'mapsUrl',
+        'promoTitle',
+        'promoDescription',
+        'couponCode',
+        'expirationDate',
+        'isActive',
+        'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id',
+        'name',
+        'category',
+        'tier',
+        'isOnDutyToday',
+        'address',
+        'phone',
+        'whatsApp',
+        'mapsUrl',
+        'promoTitle',
+        'promoDescription',
+        'couponCode',
+        'logoBase64',
+        'bannerColor',
+        'expirationDate',
+        'isActive',
+        'lat',
+        'lng',
+        'createdAt'
+      ]) &&
+      data.id == sponsorId &&
+      data.id is string && data.id.size() >= 1 && data.id.size() <= 128 &&
+      data.name is string && data.name.size() >= 2 && data.name.size() <= 80 &&
+      data.category is string && data.category in ['veterinaria', 'pet_shop', 'peluqueria', 'guarderia'] &&
+      data.tier is string && data.tier in ['padrino_gold', 'guardia_24h', 'comercio_amigo'] &&
+      data.isOnDutyToday is bool &&
+      data.address is string && data.address.size() >= 3 && data.address.size() <= 120 &&
+      data.phone is string && data.phone.size() >= 5 && data.phone.size() <= 30 &&
+      data.whatsApp is string && data.whatsApp.size() >= 6 && data.whatsApp.size() <= 25 &&
+      data.mapsUrl is string && data.mapsUrl.size() >= 5 && data.mapsUrl.size() <= 300 &&
+      data.promoTitle is string && data.promoTitle.size() >= 2 && data.promoTitle.size() <= 120 &&
+      data.promoDescription is string && data.promoDescription.size() >= 2 && data.promoDescription.size() <= 260 &&
+      data.couponCode is string && data.couponCode.size() >= 2 && data.couponCode.size() <= 40 &&
+      (!('logoBase64' in data) || (data.logoBase64 is string && data.logoBase64.size() >= 5 && data.logoBase64.size() <= 350000)) &&
+      (!('bannerColor' in data) || (data.bannerColor is string && data.bannerColor.size() >= 4 && data.bannerColor.size() <= 20)) &&
+      data.expirationDate is string && data.expirationDate.size() >= 8 && data.expirationDate.size() <= 20 &&
+      data.isActive is bool &&
+      (!('lat' in data) || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
+      (!('lng' in data) || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
+      data.createdAt is number && data.createdAt > 0;
+    }
+
+    // Admins Registry (Read-only self lookup, never client-writable)
+    match /admins/{adminId} {
+      allow get: if isVerifiedUser() && isValidId(adminId) && request.auth.uid == adminId;
+      allow list, write: if false;
+    }
+
+    // Connection Health Probe Document (Read-only for boot verification)
+    match /test/connection {
+      allow get: if existing() == null || existing().status == 'ok';
+      allow list, write: if false;
+    }
+
+    // Community Pet Alerts Collection
+    match /pets/{petId} {
+      allow get: if isValidId(petId) && existing().status in ['lost', 'found', 'adoption', 'resolved'];
+      allow list: if existing().status in ['lost', 'found', 'adoption', 'resolved'];
+
+      allow create: if isVerifiedUser() &&
+        isValidId(petId) &&
+        isValidPetShape(incoming(), petId) &&
+        incoming().authorUid == request.auth.uid &&
+        incoming().status in ['lost', 'found', 'adoption'];
+
+      allow update: if isVerifiedUser() &&
+        isValidId(petId) &&
+        isValidPetShape(incoming(), petId) &&
+        incoming().id == existing().id &&
+        incoming().authorUid == existing().authorUid &&
+        incoming().createdAt == existing().createdAt &&
+        (existing().status != 'resolved' || isAdmin()) &&
+        (
+          isAdmin() ||
+          (
+            existing().authorUid == request.auth.uid &&
+            incoming().status == 'resolved' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'resolvedAt', 'resolvedNotes'])
+          ) ||
+          (
+            existing().authorUid == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name',
+              'status',
+              'breed',
+              'color',
+              'barrio',
+              'addressOrReference',
+              'description',
+              'collarInfo',
+              'isCastrated',
+              'isVaccinated',
+              'isKidFriendly',
+              'isUrgentTransit',
+              'lat',
+              'lng'
+            ])
+          )
+        );
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(petId) &&
+        (existing().authorUid == request.auth.uid || isAdmin());
+    }
+
+    // Commercial Sponsors & 24h On-Duty Veterinary Directory
+    match /sponsors/{sponsorId} {
+      allow get: if isValidId(sponsorId) && (existing().isActive == true || isAdmin());
+      allow list: if existing().isActive == true || isAdmin();
+
+      allow create: if isVerifiedUser() &&
+        isValidId(sponsorId) &&
+        isValidSponsorShape(incoming(), sponsorId) &&
+        isAdmin();
+
+      allow update: if isVerifiedUser() &&
+        isValidId(sponsorId) &&
+        isValidSponsorShape(incoming(), sponsorId) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        isAdmin() &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'name',
+          'category',
+          'tier',
+          'isOnDutyToday',
+          'address',
+          'phone',
+          'whatsApp',
+          'mapsUrl',
+          'promoTitle',
+          'promoDescription',
+          'couponCode',
+          'logoBase64',
+          'bannerColor',
+          'expirationDate',
+          'isActive',
+          'lat',
+          'lng'
+        ]);
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(sponsorId) &&
+        isAdmin();
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "HUELLA VT • Radar Animal & Adopciones Venado Tuerto",
+  "description": "Plataforma comunitaria y de urgencias de mascotas perdidas, encontradas, santuario de adopciones y veterinarias de guardia 24hs en Venado Tuerto, Santa Fe.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

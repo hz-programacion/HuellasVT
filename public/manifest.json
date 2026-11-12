@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "HUELLA VT • Radar Animal & Adopciones Venado Tuerto",
+  "short_name": "Huella VT",
+  "description": "Plataforma comunitaria de mascotas perdidas, encontradas, santuario de adopciones y veterinarias 24hs en Venado Tuerto.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FAF7F2",
+  "theme_color": "#FF4D38",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='42' fill='%23FF4D38'/%3E%3Cpath fill='%23FFFFFF' d='M96 38c-10 0-18 8-18 18s8 18 18 18 18-8 18-18-8-18-18-18zm-42 30c-9 0-16 7-16 16s7 16 16 16 16-7 16-16-7-16-16-16zm84 0c-9 0-16 7-16 16s7 16 16 16 16-7 16-16-7-16-16-16zM96 92c-24 0-42 18-42 40 0 12 7 22 17 28 7 5 15 7 25 7s18-2 25-7c10-6 17-16 17-28 0-22-18-40-42-40z'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%23FF4D38'/%3E%3Cpath fill='%23FFFFFF' d='M256 102c-26 0-48 22-48 48s22 48 48 48 48-22 48-48-22-48-48-48zm-112 80c-24 0-42 18-42 42s18 42 42 42 42-18 42-42-18-42-42-42zm224 0c-24 0-42 18-42 42s18 42 42 42 42-18 42-42-18-42-42-42zM256 245c-64 0-112 48-112 106 0 32 18 58 45 75 18 13 40 18 67 18s49-5 67-18c27-17 45-43 45-75 0-58-48-106-112-106z'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

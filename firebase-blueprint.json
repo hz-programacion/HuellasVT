@@ -1,0 +1,326 @@
+{
+  "entities": {
+    "Pet": {
+      "title": "Pet",
+      "description": "Community report for a lost, found, adoptable, or reunited pet in Venado Tuerto.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique identifier for the pet report."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Pet name or 'Sin identificar'."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["lost", "found", "adoption", "resolved"],
+          "description": "Current status of the pet alert."
+        },
+        "species": {
+          "type": "string",
+          "enum": ["dog", "cat", "other"],
+          "description": "Species of the animal."
+        },
+        "breed": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Breed or mix description."
+        },
+        "color": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Dominant coat colors and markings."
+        },
+        "gender": {
+          "type": "string",
+          "enum": ["male", "female", "unknown"],
+          "description": "Animal sex."
+        },
+        "size": {
+          "type": "string",
+          "enum": ["small", "medium", "large"],
+          "description": "Animal size category."
+        },
+        "age": {
+          "type": "string",
+          "enum": ["puppy", "young", "adult", "senior"],
+          "description": "Approximate age stage."
+        },
+        "barrio": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60,
+          "description": "Neighborhood in Venado Tuerto."
+        },
+        "addressOrReference": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120,
+          "description": "Public street corner or landmark reference in Venado Tuerto."
+        },
+        "date": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20,
+          "description": "Date of the event (YYYY-MM-DD)."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 400,
+          "description": "Detailed traits, behavior, and context."
+        },
+        "collarInfo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Optional collar or tag description."
+        },
+        "isCastrated": {
+          "type": "boolean",
+          "description": "Whether the pet is neutered/spayed."
+        },
+        "isVaccinated": {
+          "type": "boolean",
+          "description": "Whether the pet is vaccinated."
+        },
+        "isKidFriendly": {
+          "type": "boolean",
+          "description": "Whether the pet is good with children."
+        },
+        "isUrgentTransit": {
+          "type": "boolean",
+          "description": "Whether urgent foster home is needed."
+        },
+        "shelterName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Optional local shelter or rescue group name."
+        },
+        "isVerifiedShelter": {
+          "type": "boolean",
+          "description": "Whether the report is backed by a local shelter."
+        },
+        "photoBase64": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 450000,
+          "description": "Client-compressed WebP image data URL or HTTPS image URL."
+        },
+        "photoOriginalSizeKb": {
+          "type": "number",
+          "description": "Original image size in KB before compression."
+        },
+        "photoOptimizedSizeKb": {
+          "type": "number",
+          "description": "Compressed WebP size in KB."
+        },
+        "authorName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Public display name of the reporting neighbor."
+        },
+        "authorWhatsApp": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 25,
+          "description": "Public WhatsApp contact number for the pet alert."
+        },
+        "authorUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Firebase Auth UID of the creator."
+        },
+        "lat": {
+          "type": "number",
+          "description": "Approximate latitude in Venado Tuerto."
+        },
+        "lng": {
+          "type": "number",
+          "description": "Approximate longitude in Venado Tuerto."
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Creation timestamp in epoch milliseconds."
+        },
+        "resolvedAt": {
+          "type": "number",
+          "description": "Resolution timestamp in epoch milliseconds."
+        },
+        "resolvedNotes": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Optional happy ending notes."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "status",
+        "species",
+        "breed",
+        "color",
+        "gender",
+        "barrio",
+        "addressOrReference",
+        "date",
+        "description",
+        "photoBase64",
+        "authorName",
+        "authorWhatsApp",
+        "authorUid",
+        "createdAt"
+      ]
+    },
+    "Sponsor": {
+      "title": "Sponsor",
+      "description": "Local business or 24h veterinary clinic sponsoring the Huella VT community network.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique sponsor identifier."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "description": "Business or veterinary clinic name."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["veterinaria", "pet_shop", "peluqueria", "guarderia"],
+          "description": "Business category."
+        },
+        "tier": {
+          "type": "string",
+          "enum": ["padrino_gold", "guardia_24h", "comercio_amigo"],
+          "description": "Sponsorship tier."
+        },
+        "isOnDutyToday": {
+          "type": "boolean",
+          "description": "Whether the veterinary clinic is on 24h emergency duty today."
+        },
+        "address": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 120,
+          "description": "Business street address in Venado Tuerto."
+        },
+        "phone": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 30,
+          "description": "Emergency or business phone number."
+        },
+        "whatsApp": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 25,
+          "description": "Business WhatsApp number."
+        },
+        "mapsUrl": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 300,
+          "description": "Google Maps URL for directions."
+        },
+        "promoTitle": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120,
+          "description": "Headline of the community discount or benefit."
+        },
+        "promoDescription": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 260,
+          "description": "Details of the benefit."
+        },
+        "couponCode": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40,
+          "description": "Interactive discount coupon code."
+        },
+        "logoBase64": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 350000,
+          "description": "Optional compressed business logo."
+        },
+        "bannerColor": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 20,
+          "description": "Brand accent hex color."
+        },
+        "expirationDate": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20,
+          "description": "Sponsorship expiration date (YYYY-MM-DD)."
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Whether the sponsor is currently active."
+        },
+        "lat": {
+          "type": "number",
+          "description": "Latitude in Venado Tuerto."
+        },
+        "lng": {
+          "type": "number",
+          "description": "Longitude in Venado Tuerto."
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Creation timestamp in epoch milliseconds."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "category",
+        "tier",
+        "isOnDutyToday",
+        "address",
+        "phone",
+        "whatsApp",
+        "mapsUrl",
+        "promoTitle",
+        "promoDescription",
+        "couponCode",
+        "expirationDate",
+        "isActive",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/pets/{petId}": {
+      "schema": { "$ref": "#/entities/Pet" },
+      "description": "Community reports of lost, found, adoptable, and reunited pets in Venado Tuerto."
+    },
+    "/sponsors/{sponsorId}": {
+      "schema": { "$ref": "#/entities/Sponsor" },
+      "description": "Local B2B sponsors and 24-hour on-duty veterinary clinics in Venado Tuerto."
+    }
+  }
+}
